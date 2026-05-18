@@ -1,0 +1,130 @@
+# instalar pacotes
+
+if(!require("pacman")) install.packages("pacman")
+library(pacman)
+
+pacman::p_load(
+  tidyverse,
+  lubridate,
+  writexl
+)
+
+# transformar base cras em data frame
+
+df <- read.csv("cras.csv", 
+               encoding = "latin1",
+               sep = ";")
+
+# transformar base dicionario em data frame
+
+dicio <- read.csv("dicionario.csv", 
+                  encoding = "latin1", 
+                  sep= ";")
+
+# transformar csv diretorias regionais em data frame
+
+drs = read_delim(
+  "dr_porte_mg.csv",
+  delim = "\t",
+  locale = locale(encoding = "UTF-8")
+)
+
+
+# dicionário de meses
+
+meses_pt <- c("janeiro", "fevereiro", "março", "abril", "maio", "junho",
+              "julho", "agosto", "setembro", "outubro", "novembro", "dezembro")
+
+# selecionar colunas e padronizar nomes
+
+cras_tratado <- df %>% 
+  select(-uf) %>% 
+  mutate(
+    mes_referencia = ymd(mes_referencia),
+    mes = meses_pt[month(mes_referencia)],   
+    ano = year(mes_referencia),              
+    
+    nome_unidade = str_remove(nome_unidade, "^'?CRAS[\\s\\-–]*"),
+    nome_unidade = str_remove(nome_unidade, "^'"),
+    nome_unidade = str_remove(nome_unidade, "'$"),
+    nome_unidade = str_remove(nome_unidade, "/.*$"),
+    nome_unidade = str_trim(nome_unidade),
+    nome_unidade = if_else(nome_unidade == "", "CRAS", nome_unidade),
+    nome_unidade = str_to_title(nome_unidade, locale = "pt"),
+    
+    municipio = str_remove(municipio, "^'"),
+    municipio = str_remove(municipio, "'$"),
+    municipio = str_to_title(municipio, locale = "pt"),
+    
+    id_cras = str_remove(id_cras, "^'"),
+    id_cras = str_remove(id_cras, "'$"),
+    
+    endereco = str_remove(endereco, "^'"),
+    endereco = str_remove(endereco, "'$"),
+    
+    coordenador_cras = str_remove(coordenador_cras,"^'"),
+    coordenador_cras = str_remove(coordenador_cras,"'$"),
+    coordenador_cras = str_to_title(coordenador_cras, locale = "pt"),
+    
+    cpf = str_remove(cpf,"^'"),
+    cpf = str_remove(cpf,"'$")
+  ) %>% 
+  relocate(codigoibge, .before = nome_unidade) %>% 
+  relocate(municipio, .after = codigoibge) %>% 
+  select(-X)
+
+
+# inserir as perguntas em cada coluna
+
+cras_tratado <- cras_tratado %>%
+  rename(
+    total_familias_paif                = a1,
+    novas_familias_paif                = a2,
+    familias_extrema_pobreza           = b1,
+    familias_bolsa_familia             = b2,
+    familias_bolsa_familia_def         = b3,
+    familias_bpc                       = b4,
+    familias_peti                      = b5,
+    familias_projovem                  = b6,
+    atendimentos_individualizados      = c1,
+    familias_cadastro_unico            = c2,
+    familias_atualizacao_cadastral     = c3,
+    individuos_acesso_bpc              = c4,
+    familias_encaminhadas_creas        = c5,
+    visitas_domiciliares               = c6,
+    auxilio_natalidade                 = c7,
+    auxilio_funeral                    = c8,
+    outros_beneficios_eventuais        = c9,
+    familias_grupos_paif               = d1,
+    criancas_scfv_ate_6anos            = d2,
+    criancas_scfv_6a15anos             = d3,
+    jovens_scfv_15a17anos              = d4,
+    idosos_scfv                        = d5,
+    pessoas_atividades_nao_continuadas = d6,
+    pessoas_deficiencia_scfv_paif      = d7,
+    adultos_scfv_18a59anos             = d8
+  )
+
+
+# garantir que a chave de join é do mesmo tipo nos dois data frames
+
+drs <- drs %>%
+  mutate(codigo_ibge_6 = as.character(codigo_ibge_6))
+
+cras_tratado <- cras_tratado %>%
+  mutate(codigoibge = as.character(codigoibge))
+
+# inserir porte_populacional via left_join
+
+cras_tratado <- cras_tratado %>%
+  left_join(
+    drs %>% select(codigo_ibge_6, porte_populacional),
+    by = c("codigoibge" = "codigo_ibge_6")
+  ) %>%
+  relocate(porte_populacional, .after = municipio)
+
+# salvar csv
+
+data_tratamento <- format(today(), "%d-%m-%Y")
+
+write_xlsx(cras_tratado, paste0("cras_tratado_", data_tratamento, ".xlsx"))
